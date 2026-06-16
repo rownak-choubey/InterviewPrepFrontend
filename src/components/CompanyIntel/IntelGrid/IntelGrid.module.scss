@@ -1,0 +1,38 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  p {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.6;
+  }
+
+  ul {
+    padding-left: 16px;
+    margin-top: 8px;
+  }
+
+  li {
+    font-size: 0.85rem;
+    color: var(--text2);
+    margin-bottom: 4px;
+  }
+}

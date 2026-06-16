@@ -1,0 +1,75 @@
+.card {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+
+  &:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+}
+
+.pri {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 10px;
+  border-radius: 50px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.critical {
+  background: rgba(225, 112, 85, 0.15);
+  color: var(--red);
+}
+
+.high {
+  background: rgba(253, 203, 110, 0.15);
+  color: var(--orange);
+}
+
+.medium {
+  background: rgba(116, 185, 255, 0.15);
+  color: var(--blue);
+}
+
+.name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+  padding-right: 60px;
+}
+
+.desc {
+  font-size: 0.8rem;
+  color: var(--text3);
+  line-height: 1.5;
+}
+
+.check {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 0.6rem;
+
+  &.done {
+    background: var(--green);
+    border-color: var(--green);
+    color: #fff;
+  }
+}
