@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: deploy-frontend
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: "20"
@@ -16,22 +16,10 @@ env:
 
 jobs:
   build:
-    name: Lint & Build
+    name: Build & Push
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-
-  cd:
-    name: Deploy to Oracle Cloud
-    if: github.ref == 'refs/heads/master'
-    needs: [build]
-    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.IMAGE_TAG }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,16 +44,87 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.IMAGE_TAG }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Deploy to Oracle VM
+  deploy:
+    name: Deploy to Oracle Cloud
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Save current image tag for rollback
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          script: |
+            cd ~/interviewprep-frontend
+            PREV_TAG=$(grep 'IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 || echo "latest")
+            echo "PREVIOUS_TAG=$PREV_TAG" > /tmp/rollback_info
+            cat /tmp/rollback_info
+
+      - name: Deploy config files to VM
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
           username: ${{ secrets.ORACLE_VM_USER }}
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
-          source: "docker-compose.yml,nginx.conf"
+          source: "docker-compose.yml,docker-entrypoint.sh,nginx.conf.template"
           target: "~/interviewprep-frontend"
 
-      - name: Start frontend stack
+      - name: Deploy and verify
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          script: |
+            set -e
+
+            # Write deployment env file
+            cd ~/interviewprep-frontend
+            echo "OCIR_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" > .env
+            echo "IMAGE_TAG=${{ needs.build.outputs.image_tag }}" >> .env
+            echo "API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> .env
+            echo "API_BACKEND_URL=http://144.24.99.5:8080" >> .env
+
+            # Log in to OCIR
+            echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
+
+            # Pull new image
+            docker compose pull frontend
+
+            # Stop old containers
+            docker compose down
+
+            # Start new containers
+            docker compose up -d --remove-orphans
+
+            # Wait for health check
+            echo "Waiting for frontend to become healthy..."
+            for i in $(seq 1 30); do
+              if docker inspect --format='{{.State.Health.Status}}' interviewprep-frontend 2>/dev/null | grep -q "healthy"; then
+                echo "Frontend is healthy!"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "Health check timed out!"
+                docker compose logs --tail=50
+                exit 1
+              fi
+              sleep 2
+            done
+
+            # Prune old images
+            docker image prune -f
+
+            echo "Frontend deployed successfully! Image tag: ${{ env.IMAGE_TAG }}"
+
+      - name: Rollback on failure
+        if: failure()
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
@@ -73,10 +132,16 @@ jobs:
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           script: |
             set -e
-            echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
             cd ~/interviewprep-frontend
+
+            # Read previous tag
+            PREV_TAG=$(cat /tmp/rollback_info | grep PREVIOUS_TAG | cut -d= -f2)
+            echo "Rolling back to previous tag: $PREV_TAG"
+
+            # Update .env with previous tag
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_TAG/" .env
+
+            # Restart with previous image
             docker compose down
-            docker compose pull frontend
             docker compose up -d --remove-orphans
-            docker image prune -f
-            echo "Frontend deployed!"
+            echo "Rollback complete!"
