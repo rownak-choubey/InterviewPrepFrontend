@@ -125,16 +125,14 @@ jobs:
             # Kill EVERYTHING on port 80 — any docker container, any host process
             docker ps -q | xargs -r docker stop
             docker ps -aq | xargs -r docker rm -f
-            # Nuclear: kill any host process on port 80
+            # Stop host-level nginx that was occupying port 80
+            sudo systemctl stop nginx 2>/dev/null || true
+            sudo systemctl disable nginx 2>/dev/null || true
+            # Nuclear: kill any remaining host process on port 80
             for pid in $(ss -tlnp 'sport = :80' 2>/dev/null | grep -oP 'pid=\K[0-9]+'); do
               echo "Killing pid $pid on port 80"
               kill -9 "$pid" 2>/dev/null || true
             done
-            # Also try lsof as fallback
-            for pid in $(lsof -ti :80 2>/dev/null); do
-              echo "Killing pid $pid on port 80 (via lsof)"
-              kill -9 "$pid" 2>/dev/null || true
-            done || true
 
             # Start frontend first, wait for it to be healthy, then start nginx
             docker compose up -d frontend
