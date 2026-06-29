@@ -54,48 +54,68 @@ src/
 ### Architecture
 
 ```
-GitHub (master push) → GitHub Actions CI (lint + build) → Deploy to Netlify
+GitHub (master push) → GitHub Actions CI (lint) → Build Docker image → Push to OCIR → SSH to Oracle VM → docker compose up
 ```
+
+VM runs 4 containers:
+- **nginx** (port 80) → routes `/` to frontend, `/api/` to backend
+- **frontend** (port 3000) → Next.js app
+- **api** (port 8080) → .NET backend
+- **db** (internal) → PostgreSQL
 
 ### CI/CD Pipeline
 
-- **CI**: Lint + build on every push/PR to `master`
-- **CD**: Build + deploy to Netlify on push to `master`
+- **CI**: Lint on every push/PR to `master`
+- **CD**: Build Docker image → push to OCIR → SSH deploy to Oracle VM
 
 ### GitHub Secrets Required
 
 | Secret | Description |
 |--------|-------------|
-| `NEXT_PUBLIC_API_URL` | Backend API URL (e.g., `http://YOUR_VM_IP:8080`) |
-| `NETLIFY_AUTH_TOKEN` | Netlify personal access token |
-| `NETLIFY_SITE_ID` | Netlify site ID |
+| `OCIR_USERNAME` | OCIR namespace + email |
+| `OCIR_AUTH_TOKEN` | OCI auth token for registry |
+| `ORACLE_VM_HOST` | VM public IP |
+| `ORACLE_VM_USER` | SSH username (`ubuntu`) |
+| `ORACLE_VM_SSH_KEY` | SSH private key |
+| `NEXT_PUBLIC_API_URL` | Backend API URL |
 
-### Setup
+### Docker
 
-1. **Netlify**: Connect your GitHub repo at https://app.netlify.com
-2. **GitHub Secrets**: Set the 3 secrets above in repo Settings → Secrets
-3. **Backend URL**: Set `NEXT_PUBLIC_API_URL` to your Oracle VM API endpoint
+```bash
+# Build locally
+docker build -t interviewprep-frontend .
 
-### Deploy
-
-Push to `master` — GitHub Actions builds and deploys to Netlify automatically.
+# Run
+docker run -p 3000:3000 -e NEXT_PUBLIC_API_URL=http://localhost:8080 interviewprep-frontend
+```
 
 ### Manual Deploy
 
 ```bash
-npm run build
-# Deploy .next/ output to your hosting provider
+# On VM
+cd ~/interviewprep
+docker compose down
+docker compose pull frontend
+docker compose up -d
+docker compose ps
 ```
+
+### VCN Security Rules
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 22 | TCP | SSH |
+| 80 | TCP | Nginx (frontend + API proxy) |
+| 8080 | TCP | API direct access |
+
+### Access
+
+- **Frontend**: `http://YOUR_VM_IP`
+- **API**: `http://YOUR_VM_IP/api/`
+- **Health**: `http://YOUR_VM_IP/health`
 
 ## Environment Variables
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `NEXT_PUBLIC_API_URL` | Backend API base URL | Yes |
-
-## Architecture
-
-- **Auth**: HttpOnly cookies set by backend, Axios interceptors for refresh
-- **Theme**: CSS variables, dark/light mode via ThemeContext
-- **Progress**: localStorage persistence via ProgressContext
-- **Route Protection**: Client-side AuthGuard in `(protected)/layout.tsx`
