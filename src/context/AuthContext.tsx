@@ -25,32 +25,22 @@ function toErrorMessage(raw: unknown): string {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
-    error: null,
-  });
-
-  // On mount: two-phase session hydration
-  //   Phase 1 (sync)  — read cached user from localStorage for instant UI
-  //   Phase 2 (async) — verify session with backend, update or invalidate
-  useEffect(() => {
-    let cancelled = false;
-
-    // Phase 1: fast synchronous restore from localStorage
+  const [state, setState] = useState<AuthState>(() => {
+    if (typeof window === 'undefined') {
+      return { user: null, isAuthenticated: false, isLoading: true, error: null };
+    }
     const cached = authService.getCachedSession();
     if (cached?.user) {
-      setState({
-        user: cached.user,
-        isAuthenticated: true,
-        isLoading: false,           // show app immediately
-        error: null,
-      });
+      return { user: cached.user, isAuthenticated: true, isLoading: false, error: null };
     }
+    return { user: null, isAuthenticated: false, isLoading: true, error: null };
+  });
 
-    // Phase 2: verify with backend (updates cache if profile changed)
-    // Skip if no cached user — avoids 401 cascade on fresh visitors
+  // Phase 2: async verify with backend (updates cache if profile changed)
+  useEffect(() => {
+    let cancelled = false;
+    const cached = authService.getCachedSession();
+
     async function verifySession() {
       if (!cached?.user) {
         setState({ user: null, isAuthenticated: false, isLoading: false, error: null });
@@ -69,7 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             error: null,
           });
         } else {
-          // Token expired or invalid — getCurrentUser already clears stale cache
           setState({ user: null, isAuthenticated: false, isLoading: false, error: null });
         }
       } catch {

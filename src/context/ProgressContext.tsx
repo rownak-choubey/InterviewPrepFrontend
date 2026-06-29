@@ -79,19 +79,18 @@ function computeStats(state: ProgressState, streak: number): DashboardStats {
 }
 
 export function ProgressProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProgressState>(INITIAL_STATE);
-  const [streak, setStreak] = useState(0);
-  const [mounted, setMounted] = useState(false);
+  const [state, setState] = useState<ProgressState>(() => {
+    if (typeof window === 'undefined') return INITIAL_STATE;
+    return loadState();
+  });
+  const [streak, setStreak] = useState(() => {
+    if (typeof window === 'undefined') return 0;
+    return computeStreak();
+  });
 
   useEffect(() => {
-    setMounted(true);
-    setState(loadState());
-    setStreak(computeStreak());
-  }, []);
-
-  useEffect(() => {
-    if (mounted) saveState(state);
-  }, [state, mounted]);
+    saveState(state);
+  }, [state]);
 
   const toggleTopic = useCallback((id: string) => {
     setState((prev) => {

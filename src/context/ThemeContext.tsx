@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode } from 'react';
 import { Theme } from '@/types';
 import { getStoredTheme, setStoredTheme } from '@/utils/storage';
 
@@ -16,28 +16,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (typeof window === 'undefined') return 'dark';
     return getStoredTheme();
   });
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const saved = getStoredTheme();
-    setTheme(saved);
-    document.documentElement.setAttribute('data-theme', saved);
-  }, []);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
-  useEffect(() => {
-    if (mounted) {
-      document.documentElement.setAttribute('data-theme', theme);
-    }
-  }, [theme, mounted]);
-
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     setStoredTheme(next);
-  };
+  }, [theme]);
 
-  const value = useMemo(() => ({ theme, toggleTheme }), [theme]);
+  const value = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
