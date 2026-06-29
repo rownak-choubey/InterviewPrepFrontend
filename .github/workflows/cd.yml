@@ -57,6 +57,15 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Deploy to Oracle VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          source: "docker-compose.yml,nginx.conf"
+          target: "~/interviewprep-frontend"
+
+      - name: Start frontend stack
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.ORACLE_VM_HOST }}
@@ -65,7 +74,7 @@ jobs:
           script: |
             set -e
             echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
-            cd ~/interviewprep
+            cd ~/interviewprep-frontend
             docker compose down
             docker compose pull frontend
             docker compose up -d --remove-orphans
