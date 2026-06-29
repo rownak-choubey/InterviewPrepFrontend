@@ -84,10 +84,13 @@ jobs:
           script: |
             set -e
 
-            # Force cleanup any orphaned containers from previous deploys
-            docker stop interviewprep-nginx interviewprep-frontend 2>/dev/null || true
-            docker rm -f interviewprep-nginx interviewprep-frontend 2>/dev/null || true
+            # Force cleanup: stop ALL containers, then prune
+            docker stop $(docker ps -q) 2>/dev/null || true
+            docker rm -f $(docker ps -aq) 2>/dev/null || true
             docker network prune -f 2>/dev/null || true
+
+            # Wait for port 80 to be released
+            sleep 5
 
             # Write deployment env file
             cd ~/interviewprep-frontend
