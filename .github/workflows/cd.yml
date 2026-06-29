@@ -10,7 +10,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "20"
   REGISTRY: ap-mumbai-1.ocir.io
   IMAGE_NAME: bmipfqr326qf/interviewprep-frontend
 
@@ -61,8 +60,7 @@ jobs:
           script: |
             cd ~/interviewprep-frontend
             PREV_TAG=$(grep 'IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 || echo "latest")
-            echo "PREVIOUS_TAG=$PREV_TAG" > /tmp/rollback_info
-            cat /tmp/rollback_info
+            echo "$PREV_TAG" > /tmp/prev_image_tag
 
       - name: Deploy config files to VM
         uses: appleboy/scp-action@v0.1.7
@@ -83,17 +81,9 @@ jobs:
           key: ${{ secrets.ORACLE_VM_SSH_KEY }}
           script: |
             set -e
-
-            # Force cleanup: stop ALL containers, then prune
-            docker stop $(docker ps -q) 2>/dev/null || true
-            docker rm -f $(docker ps -aq) 2>/dev/null || true
-            docker network prune -f 2>/dev/null || true
-
-            # Wait for port 80 to be released
-            sleep 5
+            cd ~/interviewprep-frontend
 
             # Write deployment env file
-            cd ~/interviewprep-frontend
             echo "OCIR_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" > .env
             echo "IMAGE_TAG=${{ needs.build.outputs.image_tag }}" >> .env
             echo "API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}" >> .env
@@ -102,34 +92,36 @@ jobs:
             # Log in to OCIR
             echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
 
-            # Pull new image
+            # Pull new image before stopping old containers (zero-downtime)
             docker compose pull frontend
 
-            # Stop old containers
+            # Tear down old stack and start fresh
             docker compose down --remove-orphans
 
-            # Start new containers
+            # Kill any orphaned process still holding port 80
+            PORT80_PID=$(ss -tlnp sport = :80 | grep -oP 'pid=\K\d+' | head -1)
+            if [ -n "$PORT80_PID" ]; then
+              echo "Killing orphan process on port 80 (PID: $PORT80_PID)"
+              kill -9 "$PORT80_PID" 2>/dev/null || true
+            fi
+
             docker compose up -d --remove-orphans
 
-            # Wait for health check
+            # Health check — poll with curl like backend does
             echo "Waiting for frontend to become healthy..."
             for i in $(seq 1 30); do
-              if docker inspect --format='{{.State.Health.Status}}' interviewprep-frontend 2>/dev/null | grep -q "healthy"; then
+              if curl -sf http://127.0.0.1:80 > /dev/null 2>&1; then
                 echo "Frontend is healthy!"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "Health check timed out!"
-                docker compose logs --tail=50
-                exit 1
+                docker image prune -f
+                echo "Deployed: ${{ env.IMAGE_TAG }}"
+                exit 0
               fi
               sleep 2
             done
 
-            # Prune old images
-            docker image prune -f
-
-            echo "Frontend deployed successfully! Image tag: ${{ env.IMAGE_TAG }}"
+            echo "Frontend failed health check after 60s"
+            docker compose logs --tail=50
+            exit 1
 
       - name: Rollback on failure
         if: failure()
@@ -142,14 +134,10 @@ jobs:
             set -e
             cd ~/interviewprep-frontend
 
-            # Read previous tag
-            PREV_TAG=$(cat /tmp/rollback_info | grep PREVIOUS_TAG | cut -d= -f2)
-            echo "Rolling back to previous tag: $PREV_TAG"
+            PREV_TAG=$(cat /tmp/prev_image_tag 2>/dev/null || echo "latest")
+            echo "Rolling back to: $PREV_TAG"
 
-            # Update .env with previous tag
             sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$PREV_TAG/" .env
-
-            # Restart with previous image
-            docker compose down
+            docker compose down --remove-orphans
             docker compose up -d --remove-orphans
-            echo "Rollback complete!"
+            echo "Rollback complete"
