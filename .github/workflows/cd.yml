@@ -95,15 +95,14 @@ jobs:
             # Pull new image before stopping old containers (zero-downtime)
             docker compose pull frontend
 
-            # Tear down old stack and start fresh
+            # Tear down this project's stack
             docker compose down --remove-orphans
 
-            # Kill any orphaned process still holding port 80
-            PORT80_PID=$(ss -tlnp sport = :80 | grep -oP 'pid=\K\d+' | head -1)
-            if [ -n "$PORT80_PID" ]; then
-              echo "Killing orphan process on port 80 (PID: $PORT80_PID)"
-              kill -9 "$PORT80_PID" 2>/dev/null || true
-            fi
+            # Clean up any orphaned containers from previous failed deploys
+            docker ps -a --filter "name=interviewprep" -q | xargs -r docker rm -f
+
+            # Ensure port 80 is free
+            fuser -k 80/tcp 2>/dev/null || true
 
             docker compose up -d --remove-orphans
 
