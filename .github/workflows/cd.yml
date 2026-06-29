@@ -92,18 +92,31 @@ jobs:
             # Log in to OCIR
             echo "${{ secrets.OCIR_AUTH_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.OCIR_USERNAME }}" --password-stdin
 
+            # Diagnostic — show what's using port 80
+            echo "=== Port 80 usage ==="
+            ss -tlnp 'sport = :80' 2>/dev/null || true
+            docker ps --format 'table {{.ID}}\t{{.Names}}\t{{.Ports}}' 2>/dev/null || true
+            docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true
+
             # Pull new image before stopping old containers (zero-downtime)
             docker compose pull frontend
 
             # Tear down this project's stack
             docker compose down --remove-orphans
 
-            # Clean up any orphaned containers from previous failed deploys
-            docker ps -a --filter "name=interviewprep" -q | xargs -r docker rm -f
-
-            # Kill anything on port 80 (fuser may not be installed)
-            docker ps --format '{{.ID}} {{.Ports}}' | grep ':80->' | awk '{print $1}' | xargs -r docker rm -f
-            ss -tlnp sport = :80 2>/dev/null | grep -oP 'pid=\K[0-9]+' | xargs -r kill -9 2>/dev/null || true
+            # Kill EVERYTHING on port 80 — any docker container, any host process
+            docker ps -q | xargs -r docker stop
+            docker ps -aq | xargs -r docker rm -f
+            # Nuclear: kill any host process on port 80
+            for pid in $(ss -tlnp 'sport = :80' 2>/dev/null | grep -oP 'pid=\K[0-9]+'); do
+              echo "Killing pid $pid on port 80"
+              kill -9 "$pid" 2>/dev/null || true
+            done
+            # Also try lsof as fallback
+            for pid in $(lsof -ti :80 2>/dev/null); do
+              echo "Killing pid $pid on port 80 (via lsof)"
+              kill -9 "$pid" 2>/dev/null || true
+            done || true
 
             # Start frontend first, wait for it to be healthy, then start nginx
             docker compose up -d frontend
