@@ -51,6 +51,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Diagnose VM port 80
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_VM_HOST }}
+          username: ${{ secrets.ORACLE_VM_USER }}
+          key: ${{ secrets.ORACLE_VM_SSH_KEY }}
+          script: |
+            echo "=== Docker containers ==="
+            docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || true
+            echo "=== Port 80 listeners ==="
+            ss -tlnp 'sport = :80' 2>/dev/null || true
+            echo "=== All listening ports ==="
+            ss -tlnp 2>/dev/null | head -30 || true
+            echo "=== systemctl list-units with nginx/apache/httpd ==="
+            systemctl list-units --type=service --state=running 2>/dev/null | grep -iE 'nginx|apache|httpd|caddy|traefik' || true
+            echo "=== netstat port 80 ==="
+            netstat -tlnp 2>/dev/null | grep ':80' || true
+
       - name: Save current image tag for rollback
         uses: appleboy/ssh-action@v1.2.0
         with:
