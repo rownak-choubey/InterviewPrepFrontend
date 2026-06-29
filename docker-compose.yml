@@ -1,0 +1,20 @@
+services:
+  frontend:
+    image: ap-mumbai-1.ocir.io/bmipfqr326qf/interviewprep-frontend:latest
+    container_name: interviewprep-frontend
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://144.24.99.5
+
+  nginx:
+    image: nginx:alpine
+    container_name: interviewprep-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - frontend
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
