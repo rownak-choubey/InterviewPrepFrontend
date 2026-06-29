@@ -84,6 +84,11 @@ jobs:
           script: |
             set -e
 
+            # Force cleanup any orphaned containers from previous deploys
+            docker stop interviewprep-nginx interviewprep-frontend 2>/dev/null || true
+            docker rm -f interviewprep-nginx interviewprep-frontend 2>/dev/null || true
+            docker network prune -f 2>/dev/null || true
+
             # Write deployment env file
             cd ~/interviewprep-frontend
             echo "OCIR_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" > .env
@@ -98,7 +103,7 @@ jobs:
             docker compose pull frontend
 
             # Stop old containers
-            docker compose down
+            docker compose down --remove-orphans
 
             # Start new containers
             docker compose up -d --remove-orphans
