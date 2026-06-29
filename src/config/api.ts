@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  baseUrl: '',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || '',
   timeout: 15000,
 } as const;
 
